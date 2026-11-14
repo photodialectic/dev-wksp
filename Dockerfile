@@ -135,44 +135,9 @@ RUN printf '%s\n' \
     'export COLORTERM=truecolor' \
     > /etc/profile.d/env.sh
 
-# dockerd startup helper (microvm has no init, so start the daemon on demand)
-RUN printf '%s\n' \
-    '#!/bin/sh' \
-    'if docker info >/dev/null 2>&1; then' \
-    '    echo "dockerd already running"' \
-    '    exit 0' \
-    'fi' \
-    'echo "Starting dockerd..."' \
-    'sudo sh -c '"'"'dockerd >/var/log/dockerd.log 2>&1 &'"'"'' \
-    'for i in $(seq 1 30); do' \
-    '    if docker info >/dev/null 2>&1; then' \
-    '        echo "dockerd started"' \
-    '        exit 0' \
-    '    fi' \
-    '    sleep 1' \
-    'done' \
-    'echo "dockerd failed to start; see /var/log/dockerd.log" >&2' \
-    'exit 1' \
-    > /usr/local/bin/start-dockerd \
-    && chmod +x /usr/local/bin/start-dockerd
-
-# Start dockerd on login (login shells source /etc/profile.d automatically)
-RUN printf '%s\n' \
-    'start-dockerd' \
-    > /etc/profile.d/dockerd.sh
-
-# Non-root user (UID 1000 to match a typical host user for bind mounts)
-RUN groupadd --gid 1000 dev \
-    && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash dev \
-    && echo "dev ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/dev \
-    && chmod 0440 /etc/sudoers.d/dev \
-    && usermod -aG docker dev
-
-# User-level tooling (installed into the dev user's home)
-USER dev
-ENV HOME=/home/dev \
-    GOPATH=/home/dev/go \
-    PATH="/usr/local/go/bin:/home/dev/go/bin:${PATH}"
+# Root user environment (MicroVM console runs as root; no non-root user needed)
+ENV GOPATH=/root/go \
+    PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
 
 RUN curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs \
     https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
@@ -187,6 +152,13 @@ RUN echo 'export COLORTERM=truecolor' >> "$HOME/.bashrc" \
 
 RUN git clone https://github.com/photodialectic/tilde.git "$HOME/.tilde" \
     && cd "$HOME/.tilde" && SKIP_VIM_PLUGINS=1 make install
+
+# /bin/sh (dash) console support: dash sources $ENV for interactive shells,
+# not /etc/profile.d. The DigitalOcean MicroVM console runs /bin/sh.
+ENV ENV=/etc/shinit
+RUN printf '%s\n' \
+    'export COLORTERM=truecolor' \
+    > /etc/shinit
 
 WORKDIR /workspace
 CMD ["bash"]
