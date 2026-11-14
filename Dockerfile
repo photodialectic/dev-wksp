@@ -16,12 +16,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         wget \
         gnupg \
         git \
-        tmux \
         vim-nox \
         python3 \
         python3-pip \
         python3-venv \
         build-essential \
+        pkg-config \
+        bison \
+        libevent-dev \
+        libncurses-dev \
         unzip \
         less \
         ripgrep \
@@ -40,6 +43,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -s /usr/bin/batcat /usr/local/bin/bat \
     && ln -s /usr/bin/fdfind /usr/local/bin/fd \
     && rm -rf /var/lib/apt/lists/*
+
+# tmux (built from source; Debian bookworm ships 3.3a, we want 3.5+)
+ARG TMUX_VERSION=3.8
+RUN curl -fsSL "https://github.com/tmux/tmux/releases/download/${TMUX_VERSION}/tmux-${TMUX_VERSION}.tar.gz" -o /tmp/tmux.tar.gz \
+    && echo "e79c699c7e949dccd0a4a125e17b8d1261e311b16979dbc8eb34542f3966d82e  /tmp/tmux.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/tmux.tar.gz -C /tmp \
+    && cd /tmp/tmux-${TMUX_VERSION} \
+    && ./configure --prefix=/usr/local \
+    && make -j"$(nproc)" \
+    && make install \
+    && rm -rf /tmp/tmux.tar.gz /tmp/tmux-${TMUX_VERSION}
 
 # GitHub CLI + Docker CLI/Compose plugin (client only; talks to the host daemon via socket)
 RUN install -m 0755 -d /etc/apt/keyrings \
