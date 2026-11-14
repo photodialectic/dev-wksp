@@ -55,7 +55,7 @@ RUN curl -fsSL "https://github.com/tmux/tmux/releases/download/${TMUX_VERSION}/t
     && make install \
     && rm -rf /tmp/tmux.tar.gz /tmp/tmux-${TMUX_VERSION}
 
-# GitHub CLI + Docker CLI/Compose plugin (client only; talks to the host daemon via socket)
+# GitHub CLI + Docker (daemon + CLI + Compose plugin)
 RUN install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
         -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
@@ -68,7 +68,7 @@ RUN install -m 0755 -d /etc/apt/keyrings \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" \
         > /etc/apt/sources.list.d/docker.list \
     && apt-get update && apt-get install -y --no-install-recommends \
-        gh docker-ce-cli docker-compose-plugin \
+        gh docker-ce docker-ce-cli docker-compose-plugin \
     && rm -rf /var/lib/apt/lists/*
 
 # Node.js (official tarball, checksum-verified)
@@ -135,11 +135,38 @@ RUN printf '%s\n' \
     'export COLORTERM=truecolor' \
     > /etc/profile.d/env.sh
 
+# dockerd startup helper (microvm has no init, so start the daemon on demand)
+RUN printf '%s\n' \
+    '#!/bin/sh' \
+    'if docker info >/dev/null 2>&1; then' \
+    '    echo "dockerd already running"' \
+    '    exit 0' \
+    'fi' \
+    'echo "Starting dockerd..."' \
+    'sudo sh -c '"'"'dockerd >/var/log/dockerd.log 2>&1 &'"'"'' \
+    'for i in $(seq 1 30); do' \
+    '    if docker info >/dev/null 2>&1; then' \
+    '        echo "dockerd started"' \
+    '        exit 0' \
+    '    fi' \
+    '    sleep 1' \
+    'done' \
+    'echo "dockerd failed to start; see /var/log/dockerd.log" >&2' \
+    'exit 1' \
+    > /usr/local/bin/start-dockerd \
+    && chmod +x /usr/local/bin/start-dockerd
+
+# Start dockerd on login (login shells source /etc/profile.d automatically)
+RUN printf '%s\n' \
+    'start-dockerd' \
+    > /etc/profile.d/dockerd.sh
+
 # Non-root user (UID 1000 to match a typical host user for bind mounts)
 RUN groupadd --gid 1000 dev \
     && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash dev \
     && echo "dev ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/dev \
-    && chmod 0440 /etc/sudoers.d/dev
+    && chmod 0440 /etc/sudoers.d/dev \
+    && usermod -aG docker dev
 
 # User-level tooling (installed into the dev user's home)
 USER dev
