@@ -130,6 +130,11 @@ RUN printf '%s\n' \
     'PS1='"'"'\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]$(__git_ps1 " (%s)")\$ '"'"'' \
     > /etc/profile.d/git-prompt.sh
 
+# Shared environment for all users (login shells source /etc/profile.d automatically)
+RUN printf '%s\n' \
+    'export COLORTERM=truecolor' \
+    > /etc/profile.d/env.sh
+
 # Non-root user (UID 1000 to match a typical host user for bind mounts)
 RUN groupadd --gid 1000 dev \
     && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash dev \
@@ -148,6 +153,10 @@ RUN curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs \
 # Source the shared git prompt in non-login shells too
 RUN echo 'source /etc/profile.d/git-prompt.sh' >> "$HOME/.bashrc" \
     && echo 'source /etc/profile.d/git-prompt.sh' >> "$HOME/.zshrc"
+
+# Simple env exports for non-login shells
+RUN echo 'export COLORTERM=truecolor' >> "$HOME/.bashrc" \
+    && echo 'export COLORTERM=truecolor' >> "$HOME/.zshrc"
 
 RUN git clone https://github.com/photodialectic/tilde.git "$HOME/.tilde" \
     && cd "$HOME/.tilde" && SKIP_VIM_PLUGINS=1 make install
