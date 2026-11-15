@@ -3,6 +3,7 @@ FROM debian:bookworm-slim
 
 ARG GO_VERSION=1.27.4
 ARG NODE_VERSION=26.13.1
+ARG TMUX_VERSION=3.8
 ARG TARGETARCH
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -45,7 +46,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # tmux (built from source; Debian bookworm ships 3.3a, we want 3.5+)
-ARG TMUX_VERSION=3.8
 RUN curl -fsSL "https://github.com/tmux/tmux/releases/download/${TMUX_VERSION}/tmux-${TMUX_VERSION}.tar.gz" -o /tmp/tmux.tar.gz \
     && echo "e79c699c7e949dccd0a4a125e17b8d1261e311b16979dbc8eb34542f3966d82e  /tmp/tmux.tar.gz" | sha256sum -c - \
     && tar -xzf /tmp/tmux.tar.gz -C /tmp \
@@ -106,34 +106,23 @@ RUN ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && echo "${HADOLINT_SHA}  /usr/local/bin/hadolint" | sha256sum -c - \
     && chmod +x /usr/local/bin/hadolint
 
-# Global Node packages (pinned; bump versions here to taste)
-RUN npm install -g \
-        typescript@7.0.2 \
-        ts-node@10.9.2 \
-        eslint@10.15.0 \
-        prettier@3.10.1 \
-        npm-check-updates@23.1.1 \
-        pnpm@12.18.0 \
-        yarn@1.22.22
+# Global Node packages (pinned in package.json)
+COPY package.json /tmp/package.json
+RUN cd /tmp && npm install -g $(node -e "const d=require('./package.json').dependencies; console.log(Object.entries(d).map(([k,v])=>k+'@'+v).join(' '))") \
+    && rm /tmp/package.json
 
 # Python tooling in an isolated venv (avoids PEP 668 "externally managed" errors)
-RUN python3 -m venv /opt/venv
+COPY requirements.txt /tmp/requirements.txt
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /opt/venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
 ENV PATH="/opt/venv/bin:${PATH}"
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir ipython black ruff
 
 RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 
-# Git prompt for all users (login shells source /etc/profile.d automatically)
-RUN printf '%s\n' \
-    'source /usr/lib/git-core/git-sh-prompt' \
-    'PS1='"'"'\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]$(__git_ps1 " (%s)")\$ '"'"'' \
-    > /etc/profile.d/git-prompt.sh
-
-# Shared environment for all users (login shells source /etc/profile.d automatically)
-RUN printf '%s\n' \
-    'export COLORTERM=truecolor' \
-    > /etc/profile.d/env.sh
+# Shell profile snippets (login shells source /etc/profile.d automatically)
+COPY profile.d/ /etc/profile.d/
 
 # Root user environment (MicroVM console runs as root; no non-root user needed)
 ENV GOPATH=/root/go \
@@ -142,13 +131,11 @@ ENV GOPATH=/root/go \
 RUN curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs \
     https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
 
-# Source the shared git prompt in non-login shells too
-RUN echo 'source /etc/profile.d/git-prompt.sh' >> "$HOME/.bashrc" \
-    && echo 'source /etc/profile.d/git-prompt.sh' >> "$HOME/.zshrc"
-
-# Simple env exports for non-login shells
-RUN echo 'export COLORTERM=truecolor' >> "$HOME/.bashrc" \
-    && echo 'export COLORTERM=truecolor' >> "$HOME/.zshrc"
+# Source shared snippets in non-login shells too
+COPY common-rc.sh /tmp/common-rc.sh
+RUN cat /tmp/common-rc.sh >> "$HOME/.bashrc" \
+    && cat /tmp/common-rc.sh >> "$HOME/.zshrc" \
+    && rm /tmp/common-rc.sh
 
 RUN git clone https://github.com/photodialectic/tilde.git "$HOME/.tilde" \
     && cd "$HOME/.tilde" && SKIP_VIM_PLUGINS=1 make install
@@ -156,9 +143,7 @@ RUN git clone https://github.com/photodialectic/tilde.git "$HOME/.tilde" \
 # /bin/sh (dash) console support: dash sources $ENV for interactive shells,
 # not /etc/profile.d. The DigitalOcean MicroVM console runs /bin/sh.
 ENV ENV=/etc/shinit
-RUN printf '%s\n' \
-    'export COLORTERM=truecolor' \
-    > /etc/shinit
+COPY shinit /etc/shinit
 
 WORKDIR /workspace
 CMD ["bash"]

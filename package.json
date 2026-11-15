@@ -1,0 +1,14 @@
+{
+  "name": "dev-wksp-globals",
+  "private": true,
+  "description": "Global npm packages for the dev-wksp image (pinned; bump versions here)",
+  "dependencies": {
+    "typescript": "7.0.2",
+    "ts-node": "10.9.2",
+    "eslint": "10.15.0",
+    "prettier": "3.10.1",
+    "npm-check-updates": "23.1.1",
+    "pnpm": "12.18.0",
+    "yarn": "1.22.22"
+  }
+}
